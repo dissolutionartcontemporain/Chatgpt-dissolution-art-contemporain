@@ -90,50 +90,54 @@ def effacer_pixels():
     img_copy = img.copy()
     steps = []
 
+    # Copier la première image (non modifiée) plusieurs fois au début
+    for c in range(first_copies):
+        copy_path = os.path.join(output_folder, f"step_{c:04d}.png")
+        cv2.imwrite(copy_path, img)
+        steps.append(copy_path)
+
+    # Dissolution progressive
     for i in range(0, len(points_to_remove), pixels_per_step):
         batch = points_to_remove[i:i + pixels_per_step]
         for (x, y) in batch:
             if 0 <= y < img_copy.shape[0] and 0 <= x < img_copy.shape[1]:
                 img_copy[y, x] = color_to_remove
-        step_path = os.path.join(output_folder, f"step_{i // pixels_per_step:04d}.png")
+        step_path = os.path.join(output_folder, f"step_{i // pixels_per_step + first_copies:04d}.png")
         cv2.imwrite(step_path, img_copy)
         steps.append(step_path)
         progress["value"] = i
         progress_label_var.set(f"Dissolution : étape {i // pixels_per_step + 1} sur {len(points_to_remove) // pixels_per_step + 1}")
         progress_win.update()
 
-    # Ajouter copies début + fin dans dossier images
-    first_image_path = steps[0]
-    for c in range(first_copies):
-        copy_path = os.path.join(output_folder, f"step_startcopy_{c:04d}.png")
-        shutil.copyfile(first_image_path, copy_path)
-        steps.insert(0, copy_path)
-
-    last_image_path = steps[-1]
+    # Copier la dernière image plusieurs fois à la fin
     for c in range(last_copies):
-        copy_path = os.path.join(output_folder, f"step_endcopy_{c:04d}.png")
-        shutil.copyfile(last_image_path, copy_path)
+        copy_path = os.path.join(output_folder, f"step_{len(steps) + c:04d}.png")
+        cv2.imwrite(copy_path, img_copy)
         steps.append(copy_path)
 
     progress_win.destroy()
     messagebox.showinfo("Terminé", f"Dissolution terminée en {len(steps)} étapes.")
     creer_video(steps, fps)
 
-def creer_video(steps, fps):
+    # Vidéo inversée si demandé
+    if reverse_var.get() == 1:
+        steps_inverted = list(reversed(steps))
+        creer_video(steps_inverted, fps, "dissolution_video_inverse.mp4")
+
+def creer_video(steps, fps, video_filename="dissolution_video.mp4"):
     if not steps:
         messagebox.showerror("Erreur", "Aucune étape enregistrée, impossible de créer la vidéo.")
         return
 
     frame = cv2.imread(steps[0])
     height, width, _ = frame.shape
-    video_filename = "dissolution_video.mp4"
     out = cv2.VideoWriter(video_filename, cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
 
     # Progress bar for video creation
     progress_video_win = Toplevel(root)
     progress_video_win.title("Création Vidéo")
     video_progress_label_var = StringVar()
-    video_progress_label_var.set("Création de la vidéo en cours...")
+    video_progress_label_var.set(f"Création de la vidéo '{video_filename}' en cours...")
     Label(progress_video_win, textvariable=video_progress_label_var).pack(padx=10, pady=10)
     progress_video = ttk.Progressbar(progress_video_win, orient='horizontal', length=300, mode='determinate')
     progress_video.pack(padx=10, pady=10)
@@ -143,14 +147,13 @@ def creer_video(steps, fps):
         frame = cv2.imread(img_path)
         out.write(frame)
         progress_video["value"] = idx + 1
-        video_progress_label_var.set(f"Vidéo : image {idx + 1} sur {len(steps)}")
+        video_progress_label_var.set(f"Vidéo '{video_filename}' : image {idx + 1} sur {len(steps)}")
         progress_video_win.update()
 
     out.release()
     progress_video_win.destroy()
     messagebox.showinfo("Vidéo créée", f"Vidéo générée : {video_filename}")
 
-# Interface graphique
 root = Tk()
 root.title("Dissolution d'Images faite avec ChatGPT")
 
@@ -192,6 +195,10 @@ last_copies_entry.pack()
 mode_var = IntVar(value=0)
 mode_checkbox = Checkbutton(root, text="Mode aléatoire (sinon ordonné)", variable=mode_var)
 mode_checkbox.pack()
+
+reverse_var = IntVar(value=0)
+reverse_checkbox = Checkbutton(root, text="Générer vidéo inversée", variable=reverse_var)
+reverse_checkbox.pack()
 
 Button(root, text="Lancer la Dissolution", command=effacer_pixels).pack()
 
